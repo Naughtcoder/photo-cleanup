@@ -17,6 +17,8 @@ final class Store: ObservableObject {
     init() {
         if let data = try? Data(contentsOf: url),
            let s = try? JSONDecoder().decode(AppState.self, from: data) { state = s }
+        // New detection categories need a fresh look at photos that were scanned under older rules.
+        if state.scanVersion < 4 { state.seen = []; state.scanVersion = 4; save() }
     }
 
     func save() {
@@ -52,6 +54,20 @@ final class Store: ObservableObject {
             if result.seen.isEmpty || Task.isCancelled { break }
         } while full
         return added
+    }
+
+    /// Teach by example from photos you pick: always delete photos like these, or always keep them.
+    func teach(ids: [String], keep: Bool) async -> Int {
+        var n = 0
+        for id in ids {
+            guard let a = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject,
+                  let img = await Scanner.thumbnail(a, allowNetwork: true), let cg = img.cgImage,
+                  let p = Scanner.analyse(cg).print else { continue }
+            state.decisions.append(Decision(print: Learner.archive(p), keep: keep, strong: true))
+            n += 1
+        }
+        save()
+        return n
     }
 
     /// `deleteIDs` are approved; every other queued item is treated as "keep" and taught to the learner.

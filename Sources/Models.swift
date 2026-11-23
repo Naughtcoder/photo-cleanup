@@ -1,12 +1,17 @@
 import Foundation
 
 enum Reason: String, Codable, CaseIterable {
-    case screenshot, whatsapp, duplicate
+    case screenshot, whatsapp, duplicate, medicine, selfie, document, screenPhoto, similar
     var label: String {
         switch self {
         case .screenshot: return "Screenshot"
         case .whatsapp: return "WhatsApp"
         case .duplicate: return "Duplicate"
+        case .medicine: return "Medicine"
+        case .selfie: return "Selfie"
+        case .document: return "Document"
+        case .screenPhoto: return "Screen photo"
+        case .similar: return "Taught"
         }
     }
 }
@@ -50,6 +55,7 @@ struct ScanStats: Codable {
 }
 
 struct AppState: Codable {
+    var scanVersion = 0
     var lastStats: ScanStats?
     var seen: Set<String> = []
     var queue: [Candidate] = []

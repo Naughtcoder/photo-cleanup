@@ -1,12 +1,14 @@
 import SwiftUI
 import Photos
 import UserNotifications
+import PhotosUI
 
 struct RootView: View {
     @EnvironmentObject var store: Store
     var body: some View {
         TabView {
             ReviewView().tabItem { Label("Review", systemImage: "photo.stack") }
+            TeachView().tabItem { Label("Teach", systemImage: "graduationcap") }
             LogView().tabItem { Label("History", systemImage: "clock") }
         }
         .task {
@@ -22,6 +24,8 @@ struct ReviewView: View {
     @State private var selected: Set<String> = []
     @State private var strong: Set<String> = []
     @State private var initialised = false
+    @State private var filter: Reason?
+    private var visible: [Candidate] { store.state.queue.filter { filter == nil || $0.reasons.contains(filter!) } }
     private let cols = [GridItem(.adaptive(minimum: 100), spacing: 6)]
 
     var body: some View {
@@ -33,7 +37,7 @@ struct ReviewView: View {
                         .padding(.top, 80)
                 } else {
                     LazyVGrid(columns: cols, spacing: 6) {
-                        ForEach(store.state.queue) { c in
+                        ForEach(visible) { c in
                             Cell(c: c, on: selected.contains(c.id), protected: strong.contains(c.id))
                                 .onTapGesture { toggle(c.id) }
                                 .contextMenu {
@@ -47,6 +51,18 @@ struct ReviewView: View {
             }
             .navigationTitle("Review")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu {
+                        Picker("Show", selection: $filter) {
+                            Text("All (\(store.state.queue.count))").tag(Reason?.none)
+                            ForEach(Reason.allCases, id: \.self) { r in
+                                Text("\(r.label) (\(store.state.queue.filter { $0.reasons.contains(r) }.count))").tag(Reason?.some(r))
+                            }
+                        }
+                        Button("Tick all shown") { selected.formUnion(visible.map(\.id)); strong.subtract(visible.map(\.id)) }
+                        Button("Untick all shown") { selected.subtract(visible.map(\.id)) }
+                    } label: { Label(filter?.label ?? "Filter", systemImage: "line.3.horizontal.decrease.circle") }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { Task { _ = await store.scan(allowNetwork: true, full: true); seed() } } label: {
                         if store.scanning { HStack { ProgressView(); Text("\(store.progress)").font(.caption).monospacedDigit() } } else { Text("Scan all") }
@@ -145,6 +161,44 @@ struct LogView: View {
                     }
                 }
             }.navigationTitle("History")
+        }
+    }
+}
+
+struct TeachView: View {
+    @EnvironmentObject var store: Store
+    @State private var deletePick: [PhotosPickerItem] = []
+    @State private var keepPick: [PhotosPickerItem] = []
+    @State private var message = ""
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    PhotosPicker(selection: $deletePick, matching: .images, photoLibrary: .shared()) {
+                        Label("Pick photos to always delete", systemImage: "trash")
+                    }
+                    PhotosPicker(selection: $keepPick, matching: .images, photoLibrary: .shared()) {
+                        Label("Pick photos to always keep", systemImage: "hand.raised")
+                    }
+                } footer: {
+                    Text("The app matches photos that look similar: same kind of scene, object or document. It cannot recognise a specific person, so photos of one person are only matched when they look alike overall.")
+                }
+                if !message.isEmpty { Section { Text(message) } }
+            }
+            .navigationTitle("Teach")
+            .onChange(of: deletePick) { _, items in run(items, keep: false) }
+            .onChange(of: keepPick) { _, items in run(items, keep: true) }
+        }
+    }
+
+    private func run(_ items: [PhotosPickerItem], keep: Bool) {
+        let ids = items.compactMap(\.itemIdentifier)
+        guard !ids.isEmpty else { return }
+        Task {
+            let n = await store.teach(ids: ids, keep: keep)
+            message = "Learned from \(n) photos. Run Scan all to apply it."
+            deletePick = []; keepPick = []
         }
     }
 }

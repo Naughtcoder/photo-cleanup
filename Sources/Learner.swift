@@ -8,6 +8,7 @@ struct Learner {
     static let voteRadius: Float = 0.6
     static let strongKeepRadius: Float = 0.45
     static let keepRadius: Float = 0.30
+    static let deleteRadius: Float = 0.35
 
     private let examples: [(print: VNFeaturePrintObservation, keep: Bool, strong: Bool)]
 
@@ -27,12 +28,14 @@ struct Learner {
 
     /// `adjustment` in -1...1 (negative = you kept similar photos, positive = you deleted them).
     /// `protected` is true when a very similar photo was kept, or one you marked "never delete like this".
-    func evaluate(_ p: VNFeaturePrintObservation) -> (adjustment: Double, protected: Bool) {
+    func evaluate(_ p: VNFeaturePrintObservation) -> (adjustment: Double, protected: Bool, strongDelete: Bool) {
         var del = 0.0, keep = 0.0
         var isProtected = false
+        var strongDelete = false
         for e in examples {
             var d: Float = 0
             guard (try? p.computeDistance(&d, to: e.print)) != nil, d < Learner.voteRadius else { continue }
+            if !e.keep && e.strong && d < Learner.deleteRadius { strongDelete = true }
             let w = Double(1 - d / Learner.voteRadius)
             if e.keep {
                 keep += w
@@ -40,6 +43,6 @@ struct Learner {
             } else { del += w }
         }
         let total = del + keep
-        return (total > 0 ? (del - keep) / total : 0, isProtected)
+        return (total > 0 ? (del - keep) / total : 0, isProtected, strongDelete)
     }
 }
